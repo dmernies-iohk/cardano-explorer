@@ -42,7 +42,8 @@ with block_meta_cte as (
     block_no,
     slot_no,
     quote_literal(block.slot_no * (select slot_duration from meta) * 0.001) as time_since_start,
-    (select start_time from meta) as start_time
+    (select start_time from meta) as start_time,
+    (select protocol_const from meta) as protocol_const
   from block
 )
 select
@@ -53,18 +54,21 @@ select
   case when slot_no >= 0
     then start_time + cast (time_since_start as interval)
     else start_time
-  end as "createdAt" 
+  end as "createdAt",
+  case when slot_no > 0
+    then floor(slot_no / (10 * protocol_const))
+    else 0
+  end as "epochNo",
+  case when slot_no > 0
+    then slot_no - (floor(slot_no / (10 * protocol_const)) * (10 * protocol_const))
+    else 0
+  end as "slotWithinEpoch"
 from block_meta_cte;
 
 create view "Block" as
 select
   "BlockMeta"."createdAt",
-  -- TODO - Needs to be modelled
-  -- epoch
-  -- TODO - Needs to be modelled
-  -- slot
-  -- TODO: Optimise
-  (select sum(fee) from tx where tx.block = block.id) as "fees"
+  (select sum(fee) from tx where tx.block = block.id) as "fees",
   block."hash" as id,
   block.merkel_root as "merkelRootHash",
   block.block_no as number,
@@ -73,8 +77,6 @@ select
 from block
 left outer join block as previous_block
   on block.previous = previous_block.id
-left outer join tx
-  on tx.block = block.id
 inner join "BlockMeta"
   on "BlockMeta".id = block.id;
 
@@ -84,9 +86,27 @@ select
   tx.fee,
   tx.hash as id,
   "BlockMeta"."createdAt" as "includedAt",
-  -- TODO: Optimise
   (select sum("value") from tx_out where tx_id = tx.id) as "totalOutput"
 from
   tx
 inner join "BlockMeta"
   on "BlockMeta".id = tx.block;
+
+create view "Epoch" as 
+select
+  sum(tx_out.value) as output,
+  max("Block"."createdAt") as "endedAt",
+  min("Block"."createdAt") as "startedAt",
+  count(distinct tx.hash) as "transactionsCount",
+  "BlockMeta"."epochNo" as "number"
+from block
+join "Block"
+  on block.hash = "Block".id
+join tx
+  on tx.block = block.id
+join tx_out
+  on tx_out.tx_id = tx.id
+join "BlockMeta"
+  on "BlockMeta".id = block.id
+group by "BlockMeta"."epochNo"
+order by "BlockMeta"."epochNo";
