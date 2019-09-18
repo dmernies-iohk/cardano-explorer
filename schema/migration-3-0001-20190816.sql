@@ -110,3 +110,23 @@ join "BlockMeta"
   on "BlockMeta".id = block.id
 group by "BlockMeta"."epochNo"
 order by "BlockMeta"."epochNo";
+
+create view "Slot" as 
+with recursive slot_numbers as
+(
+  select 0 as slot_no
+  union all
+  select slot_no + 1 FROM slot_numbers
+  where slot_no + 1 <= (select max(slot_no) from block)
+)
+select
+  slot_numbers.slot_no as "number",
+  block.hash as block,
+  block.slot_leader as leader,
+  "BlockMeta"."epochNo",
+  "BlockMeta"."createdAt" -- This is currently null if there is no block. Lift date calc here
+from slot_numbers
+left outer join block
+  on block.slot_no = slot_numbers.slot_no
+left outer join "BlockMeta"
+  on block.id = "BlockMeta".id;
