@@ -209,7 +209,9 @@ genesisTxos config =
         <$> Map.toList (Ledger.unGenesisAvvmBalances $ Ledger.configAvvmDistr config)
 
     networkMagic :: Ledger.NetworkMagic
-    networkMagic = Ledger.makeNetworkMagic (Ledger.configProtocolMagic config)
+    networkMagic =
+      Ledger.makeNetworkMagic (Ledger.configProtocolMagic config)
+        { Crypto.getRequiresNetworkMagic = Crypto.RequiresMagic }
 
     nonAvvmBalances :: [(Ledger.Address, Ledger.Lovelace)]
     nonAvvmBalances =
