@@ -41,6 +41,7 @@ library
                         Explorer.Node.Plugin.Default
                         Explorer.Node.Plugin.Default.Insert
                         Explorer.Node.Plugin.Default.Rollback
+                        Explorer.Node.Plugin.Epoch
                         Explorer.Node.Util
                         Explorer.Node.Tracing.ToObjectOrphans
 
@@ -59,6 +60,7 @@ library
                       , containers
                       , contra-tracer
                       , cryptonite
+                      , esqueleto
                       , extra
                       , formatting
                       , io-sim-classes
