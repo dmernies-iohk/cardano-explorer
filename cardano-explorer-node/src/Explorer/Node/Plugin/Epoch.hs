@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Explorer.Node.Plugin.Epoch
-  ( updateEpochNum
+  ( epochPluginOnStartup
+  , epochPluginInsertBlock
   ) where
 
 import           Cardano.BM.Trace (Trace, logError)
@@ -9,11 +10,8 @@ import           Cardano.BM.Trace (Trace, logError)
 import           Control.Monad (join)
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Monad.Logger (NoLoggingT)
-import           Control.Monad.Trans.Except (ExceptT)
-import           Control.Monad.Trans.Except.Extra (newExceptT, runExceptT)
 import           Control.Monad.Trans.Reader (ReaderT)
 
-import           Data.Maybe (fromMaybe)
 import           Data.Text (Text)
 import           Data.Time.Clock (UTCTime)
 import           Data.Word (Word64)
@@ -24,8 +22,12 @@ import           Database.Esqueleto (InnerJoin (..), Value (..), (^.), (==.),
 import           Database.Persist.Class (repsert)
 import           Database.Persist.Sql (SqlBackend)
 
-import           Explorer.DB (Epoch (..), EpochId, EntityField (..), isJust, listToMaybe, maybeToEither)
+import           Explorer.DB (Epoch (..), EpochId, EntityField (..), isJust, listToMaybe)
 import           Explorer.Node.Error
+
+import           Ouroboros.Consensus.Ledger.Byron (ByronBlock (..))
+import           Ouroboros.Network.Block (BlockNo (..))
+
 
 epochPluginOnStartup :: Trace IO Text -> ReaderT SqlBackend (NoLoggingT IO) ()
 epochPluginOnStartup trce =
@@ -33,16 +35,20 @@ epochPluginOnStartup trce =
   where
     loop :: MonadIO m => Word64 -> ReaderT SqlBackend m ()
     loop epochNum = do
-      either reportError (const $ nextLoop epochNum) =<< updateEpochNum epochNum
+      either (liftIO . reportError) (const $ nextLoop epochNum) =<< updateEpochNum epochNum
 
     nextLoop :: MonadIO m => Word64 -> ReaderT SqlBackend m ()
     nextLoop epochNum
-      | epochNum >= 1 = loop (epochNum - 1)
+      | epochNum > 0 = loop (epochNum - 1)
       | otherwise = pure ()
 
-    reportError :: MonadIO m => ExplorerNodeError -> m ()
+    reportError :: ExplorerNodeError -> IO ()
     reportError err =
-      liftIO . logError trce $ "epochPluginOnStartup: " <> renderExplorerNodeError err
+      logError trce $ "epochPluginOnStartup: " <> renderExplorerNodeError err
+
+
+epochPluginInsertBlock :: Trace IO Text -> ByronBlock -> BlockNo -> ReaderT SqlBackend (NoLoggingT IO) ()
+epochPluginInsertBlock = undefined -- trce bblk blkNo =
 
 -- -------------------------------------------------------------------------------------------------
 

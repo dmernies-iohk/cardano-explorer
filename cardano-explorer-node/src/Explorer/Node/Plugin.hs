@@ -36,7 +36,7 @@ data ExplorerNodePlugin = ExplorerNodePlugin
   { -- A function run each time the application starts. Can be used to do a one time update/setup
     -- of a table.
     plugOnStartup
-        :: [Trace IO Text -> ReaderT SqlBackend (NoLoggingT IO) (Either ExplorerNodeError ())]
+        :: [Trace IO Text -> ReaderT SqlBackend (NoLoggingT IO) ()]
     -- Called for each block recieved from the network.
     -- This will not be called for the original genesis block, but will be called for
     -- all subsequent blocks.

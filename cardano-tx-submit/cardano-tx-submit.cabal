@@ -54,7 +54,6 @@ library
                       , cardano-binary
                       , cardano-crypto-class
                       , cardano-crypto-wrapper
-                      , cardano-explorer-db
                       , cardano-prelude
                       , cardano-ledger
                       , cardano-shell
