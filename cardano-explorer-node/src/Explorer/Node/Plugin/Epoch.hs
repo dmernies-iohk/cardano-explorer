@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Explorer.Node.Plugin.Epoch
-  ( updateBoundaryEpochEntry
+  ( epochPluginInsertBlock
   ) where
 
 import           Control.Monad.IO.Class (MonadIO)
@@ -22,9 +22,10 @@ import           Database.Persist.Sql (SqlBackend)
 import           Explorer.DB (Epoch (..), EpochId, EntityField (..), listToMaybe, maybeToEither)
 import           Explorer.Node.Error
 
+epochPluginInsertBlock
 
-updateBoundaryEpochEntry :: MonadIO m => Word64 -> ExceptT ExplorerNodeError (ReaderT SqlBackend m) ()
-updateBoundaryEpochEntry epochNum = do
+epochPluginInsertBlock :: MonadIO m => Word64 -> ExceptT ExplorerNodeError (ReaderT SqlBackend m) ()
+epochPluginInsertBlock epochNum = do
    epochId <- newExceptT $ queryEpochId epochNum
    epoch <- newExceptT $ queryEpochEntry epochNum
    newExceptT $ do
@@ -58,7 +59,16 @@ queryEpochEntry epochNum = do
             Right $ Epoch outSum txCount epochNum start end
         _other -> Left $ ENEEpochLookup epochNum
 
-{-
+
+queryLatestBlockEpochNo :: MonadIO m => ReaderT SqlBackend m (Maybe Word64)
+queryLatestBlockEpochNo
+  res <- select . from $ \ epoch -> do
+            where_ (isJust (blk ^. BlockEpochNo))
+            orderBy [blk ^. BlockEpochNo)]
+            limit 1
+            pure $ (blk ^. BlockEpochNo)
+  pure $ unValue <$> listToMaybe res
+
 queryLatestEpochNo :: MonadIO m => ReaderT SqlBackend m (Maybe Word64)
 queryLatestEpochNo = do
   res <- select . from $ \ epoch -> do
@@ -66,5 +76,3 @@ queryLatestEpochNo = do
             limit 1
             pure $ (epoch ^. EpochNo)
   pure $ unValue <$> listToMaybe res
-
--}
