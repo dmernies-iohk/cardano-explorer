@@ -1,46 +1,67 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Explorer.Node.Plugin.Epoch
-  ( epochPluginInsertBlock
+  ( updateEpochNum
   ) where
 
-import           Control.Monad.IO.Class (MonadIO)
+import           Cardano.BM.Trace (Trace, logError)
+
+import           Control.Monad (join)
+import           Control.Monad.IO.Class (MonadIO, liftIO)
+import           Control.Monad.Logger (NoLoggingT)
 import           Control.Monad.Trans.Except (ExceptT)
-import           Control.Monad.Trans.Except.Extra (newExceptT)
+import           Control.Monad.Trans.Except.Extra (newExceptT, runExceptT)
 import           Control.Monad.Trans.Reader (ReaderT)
 
+import           Data.Maybe (fromMaybe)
+import           Data.Text (Text)
 import           Data.Time.Clock (UTCTime)
 import           Data.Word (Word64)
 
 import           Database.Esqueleto (InnerJoin (..), Value (..), (^.), (==.),
-                    count, from, just, max_, min_, on, select, sum_, val, where_)
-                    -- asc, count, from, just, limit, max_, min_, on, orderBy, select, sum_, val, where_)
+                    asc, count, from, just, limit, max_, min_, on, orderBy, select, sum_, val, where_)
 
 import           Database.Persist.Class (repsert)
 import           Database.Persist.Sql (SqlBackend)
 
-import           Explorer.DB (Epoch (..), EpochId, EntityField (..), listToMaybe, maybeToEither)
+import           Explorer.DB (Epoch (..), EpochId, EntityField (..), isJust, listToMaybe, maybeToEither)
 import           Explorer.Node.Error
 
-epochPluginInsertBlock
+epochPluginOnStartup :: Trace IO Text -> ReaderT SqlBackend (NoLoggingT IO) ()
+epochPluginOnStartup trce =
+    maybe (pure ()) loop =<< queryLatestBlockEpochNo
+  where
+    loop :: MonadIO m => Word64 -> ReaderT SqlBackend m ()
+    loop epochNum = do
+      ee <- updateEpochNum epochNum
+      case ee of
+        Left err -> liftIO . logError trce $ "epochPluginOnStartup: " <> renderExplorerNodeError err
+        Right () -> do
+          if epochNum >= 1
+            then loop (epochNum - 1)
+            else pure ()
 
-epochPluginInsertBlock :: MonadIO m => Word64 -> ExceptT ExplorerNodeError (ReaderT SqlBackend m) ()
-epochPluginInsertBlock epochNum = do
-   epochId <- newExceptT $ queryEpochId epochNum
-   epoch <- newExceptT $ queryEpochEntry epochNum
-   newExceptT $ do
-      repsert epochId epoch
-      pure $ Right ()
+-- -------------------------------------------------------------------------------------------------
 
 type ValMay a = Value (Maybe a)
 
+updateEpochNum :: MonadIO m => Word64 -> ReaderT SqlBackend m (Either ExplorerNodeError ())
+updateEpochNum epochNum = do
+    maybe (pure $ Right ()) update =<< queryEpochId epochNum
+  where
+    update :: MonadIO m => EpochId -> ReaderT SqlBackend m (Either ExplorerNodeError ())
+    update epochId = do
+      eEpoch <- queryEpochEntry epochNum
+      case eEpoch of
+        Left err -> pure $ Left err
+        Right epoch -> Right <$> repsert epochId epoch
 
-queryEpochId :: MonadIO m => Word64 -> ReaderT SqlBackend m (Either ExplorerNodeError EpochId)
+queryEpochId :: MonadIO m => Word64 -> ReaderT SqlBackend m (Maybe EpochId)
 queryEpochId epochNum = do
   res <- select . from $ \ epoch -> do
             where_ (epoch ^. EpochNo ==. val epochNum)
             pure $ (epoch ^. EpochId)
-  pure $ maybeToEither (ENEEpochLookup epochNum) unValue (listToMaybe res)
+  pure $ unValue <$> (listToMaybe res)
 
 queryEpochEntry :: MonadIO m => Word64 -> ReaderT SqlBackend m (Either ExplorerNodeError Epoch)
 queryEpochEntry epochNum = do
@@ -61,13 +82,13 @@ queryEpochEntry epochNum = do
 
 
 queryLatestBlockEpochNo :: MonadIO m => ReaderT SqlBackend m (Maybe Word64)
-queryLatestBlockEpochNo
-  res <- select . from $ \ epoch -> do
+queryLatestBlockEpochNo = do
+  res <- select . from $ \ blk -> do
             where_ (isJust (blk ^. BlockEpochNo))
-            orderBy [blk ^. BlockEpochNo)]
+            orderBy [asc (blk ^. BlockEpochNo)]
             limit 1
             pure $ (blk ^. BlockEpochNo)
-  pure $ unValue <$> listToMaybe res
+  pure $ join (unValue <$> listToMaybe res)
 
 queryLatestEpochNo :: MonadIO m => ReaderT SqlBackend m (Maybe Word64)
 queryLatestEpochNo = do
