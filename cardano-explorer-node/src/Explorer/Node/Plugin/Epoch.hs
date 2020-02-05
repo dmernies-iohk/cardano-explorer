@@ -33,13 +33,16 @@ epochPluginOnStartup trce =
   where
     loop :: MonadIO m => Word64 -> ReaderT SqlBackend m ()
     loop epochNum = do
-      ee <- updateEpochNum epochNum
-      case ee of
-        Left err -> liftIO . logError trce $ "epochPluginOnStartup: " <> renderExplorerNodeError err
-        Right () -> do
-          if epochNum >= 1
-            then loop (epochNum - 1)
-            else pure ()
+      either reportError (const $ nextLoop epochNum) =<< updateEpochNum epochNum
+
+    nextLoop :: MonadIO m => Word64 -> ReaderT SqlBackend m ()
+    nextLoop epochNum
+      | epochNum >= 1 = loop (epochNum - 1)
+      | otherwise = pure ()
+
+    reportError :: MonadIO m => ExplorerNodeError -> m ()
+    reportError err =
+      liftIO . logError trce $ "epochPluginOnStartup: " <> renderExplorerNodeError err
 
 -- -------------------------------------------------------------------------------------------------
 
