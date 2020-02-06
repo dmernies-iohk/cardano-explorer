@@ -54,7 +54,7 @@ data ValueFee = ValueFee
 insertByronBlock
     :: Trace IO Text -> ByronBlock -> BlockNo
     -> ReaderT SqlBackend (NoLoggingT IO) (Either ExplorerNodeError ())
-insertByronBlock tracer blk tipBlockNo =
+insertByronBlock tracer blk tipBlockNo = do
   runExceptT $
     case byronBlockRaw blk of
       Ledger.ABOBBlock ablk -> insertABlock tracer ablk tipBlockNo

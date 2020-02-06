@@ -5,11 +5,11 @@ module Explorer.Node.Plugin.Epoch
   , epochPluginInsertBlock
   ) where
 
-import           Cardano.BM.Trace (Trace, logError)
+import           Cardano.BM.Trace (Trace, logError, logInfo)
 
 import qualified Cardano.Chain.Block as Ledger
 
-import           Control.Monad (join, when)
+import           Control.Monad (join)
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Monad.Logger (NoLoggingT)
 import           Control.Monad.Trans.Reader (ReaderT)
@@ -25,7 +25,9 @@ import           Database.Persist.Class (repsert)
 import           Database.Persist.Sql (SqlBackend)
 
 import           Explorer.DB (Epoch (..), EpochId, EntityField (..), isJust, listToMaybe)
+import qualified Explorer.DB as DB
 import           Explorer.Node.Error
+import           Explorer.Node.Util
 
 import           Ouroboros.Consensus.Ledger.Byron (ByronBlock (..))
 import           Ouroboros.Network.Block (BlockNo (..))
@@ -37,6 +39,7 @@ epochPluginOnStartup trce =
   where
     loop :: MonadIO m => Word64 -> ReaderT SqlBackend m ()
     loop epochNum = do
+      liftIO . logInfo trce $ "epochPluginOnStartup: Inserting epoch table for epoch " <> textShow epochNum
       either (liftIO . reportError) (const $ nextLoop epochNum) =<< updateEpochNum epochNum
 
     nextLoop :: MonadIO m => Word64 -> ReaderT SqlBackend m ()
@@ -49,29 +52,37 @@ epochPluginOnStartup trce =
       logError trce $ "epochPluginOnStartup: " <> renderExplorerNodeError err
 
 
-epochPluginInsertBlock :: Trace IO Text -> ByronBlock -> BlockNo -> ReaderT SqlBackend (NoLoggingT IO) ()
-epochPluginInsertBlock trce blk tipBlkNo =
-  case byronBlockRaw blk of
-    Ledger.ABOBBoundary bblk -> do
-      let newEpoch = Ledger.boundaryEpoch (Ledger.boundaryHeader bblk)
-      -- As long as the current epoch is > 0 we update the epcoch table on a boundary block.
-      when (newEpoch > 0) $ do
-        liftIO . logError trce $ "epochPluginInsertBlock: Updating epoch table for epoch " <> textShow (newEpoch - 1)
-        res <- updateEpochNum (newEpoch - 1) -- Update the last epoch.
-        case res of
-          Left err -> liftIO . logError trce $ "epochPluginInsertBlock: " <> renderExplorerNodeError err
-          Right () -> pure ()
-    Ledger.ABOBBlock blk ->
-      slotsPerEpoch <- 10 * DB.metaProtocolConst <$> liftLookupFail "insertABlock" DB.queryMeta
-      unless (blockNumber blk > unBlockNo tipBlkNo - 10) $ do
+epochPluginInsertBlock :: Trace IO Text -> ByronBlock -> BlockNo -> ReaderT SqlBackend (NoLoggingT IO) (Either ExplorerNodeError ())
+epochPluginInsertBlock trce rawBlk tipBlkNo =
+    case byronBlockRaw rawBlk of
+      Ledger.ABOBBoundary bblk -> do
+        let newEpoch = Ledger.boundaryEpoch (Ledger.boundaryHeader bblk)
+        -- As long as the current epoch is > 0 we update the epcoch table on a boundary block.
+        if newEpoch > 0
+          then do
+            liftIO . logInfo trce $ "epochPluginInsertBlock: Updating epoch table for epoch " <> textShow (newEpoch - 1)
+            updateEpochNum (newEpoch - 1) -- Update the last epoch.
+          else pure $ Right ()
+      Ledger.ABOBBlock blk -> do
+        if blockNumber blk > unBlockNo tipBlkNo - 10
+          then do
+            eMeta <- DB.queryMeta
+            case eMeta of
+              Left err -> do
+                logErr $ Left (ENELookup "epochPluginInsertBlock" err)
 
-    let  =  meta
-
-    slid <- lift . DB.insertSlotLeader $ mkSlotLeader blk
-    blkId <- lift . DB.insertBlock $
-                  DB.Block
-                    { DB.blockHash = blockHash blk
-                    , DB.blockEpochNo = Just $  `div` slotsPerEpoch
+              Right meta -> do
+                let slotsPerEpoch = 10 * DB.metaProtocolConst meta
+                updateEpochNum (slotNumber blk `div` slotsPerEpoch)
+          else
+            pure $ Right ()
+  where
+    -- logErr :: MonadIO m => Either ExplorerNodeError () -> m (Either ExplorerNodeError ())
+    logErr res = do
+      case res of
+        Left err -> liftIO . logError trce $ "epochPluginInsertBlock: " <> renderExplorerNodeError err
+        Right () -> pure ()
+      pure res
 
 -- -------------------------------------------------------------------------------------------------
 

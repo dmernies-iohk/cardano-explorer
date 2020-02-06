@@ -31,6 +31,7 @@ library
                         -Wincomplete-uni-patterns
 
   exposed-modules:      Explorer.Node
+                        Explorer.Node.Plugin.Epoch
 
   other-modules:        Explorer.Node.Config
                         Explorer.Node.Database
@@ -41,7 +42,6 @@ library
                         Explorer.Node.Plugin.Default
                         Explorer.Node.Plugin.Default.Insert
                         Explorer.Node.Plugin.Default.Rollback
-                        Explorer.Node.Plugin.Epoch
                         Explorer.Node.Util
                         Explorer.Node.Tracing.ToObjectOrphans
 
