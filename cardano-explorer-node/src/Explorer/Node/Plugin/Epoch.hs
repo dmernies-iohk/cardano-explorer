@@ -7,7 +7,9 @@ module Explorer.Node.Plugin.Epoch
 
 import           Cardano.BM.Trace (Trace, logError)
 
-import           Control.Monad (join)
+import qualified Cardano.Chain.Block as Ledger
+
+import           Control.Monad (join, when)
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Monad.Logger (NoLoggingT)
 import           Control.Monad.Trans.Reader (ReaderT)
@@ -48,7 +50,28 @@ epochPluginOnStartup trce =
 
 
 epochPluginInsertBlock :: Trace IO Text -> ByronBlock -> BlockNo -> ReaderT SqlBackend (NoLoggingT IO) ()
-epochPluginInsertBlock = undefined -- trce bblk blkNo =
+epochPluginInsertBlock trce blk tipBlkNo =
+  case byronBlockRaw blk of
+    Ledger.ABOBBoundary bblk -> do
+      let newEpoch = Ledger.boundaryEpoch (Ledger.boundaryHeader bblk)
+      -- As long as the current epoch is > 0 we update the epcoch table on a boundary block.
+      when (newEpoch > 0) $ do
+        liftIO . logError trce $ "epochPluginInsertBlock: Updating epoch table for epoch " <> textShow (newEpoch - 1)
+        res <- updateEpochNum (newEpoch - 1) -- Update the last epoch.
+        case res of
+          Left err -> liftIO . logError trce $ "epochPluginInsertBlock: " <> renderExplorerNodeError err
+          Right () -> pure ()
+    Ledger.ABOBBlock blk ->
+      slotsPerEpoch <- 10 * DB.metaProtocolConst <$> liftLookupFail "insertABlock" DB.queryMeta
+      unless (blockNumber blk > unBlockNo tipBlkNo - 10) $ do
+
+    let  =  meta
+
+    slid <- lift . DB.insertSlotLeader $ mkSlotLeader blk
+    blkId <- lift . DB.insertBlock $
+                  DB.Block
+                    { DB.blockHash = blockHash blk
+                    , DB.blockEpochNo = Just $  `div` slotsPerEpoch
 
 -- -------------------------------------------------------------------------------------------------
 
@@ -99,6 +122,7 @@ queryLatestBlockEpochNo = do
             pure $ (blk ^. BlockEpochNo)
   pure $ join (unValue <$> listToMaybe res)
 
+{-
 queryLatestEpochNo :: MonadIO m => ReaderT SqlBackend m (Maybe Word64)
 queryLatestEpochNo = do
   res <- select . from $ \ epoch -> do
@@ -106,3 +130,4 @@ queryLatestEpochNo = do
             limit 1
             pure $ (epoch ^. EpochNo)
   pure $ unValue <$> listToMaybe res
+-}
