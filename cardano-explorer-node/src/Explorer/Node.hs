@@ -157,6 +157,7 @@ runExplorer plugin enp = do
       Left err -> logError trce $ renderExplorerNodeError err
       Right () -> pure ()
 
+    runDbStartup trce plugin
     void $ runExplorerNodeClient trce plugin (mkNodeConfig gc) (enpSocketPath enp)
 
 

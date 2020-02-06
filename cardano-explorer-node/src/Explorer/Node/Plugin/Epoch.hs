@@ -9,7 +9,7 @@ import           Cardano.BM.Trace (Trace, logError, logInfo)
 
 import qualified Cardano.Chain.Block as Ledger
 
-import           Control.Monad (join)
+import           Control.Monad (join, void)
 import           Control.Monad.IO.Class (MonadIO, liftIO)
 import           Control.Monad.Logger (NoLoggingT)
 import           Control.Monad.Trans.Reader (ReaderT)
@@ -34,7 +34,8 @@ import           Ouroboros.Network.Block (BlockNo (..))
 
 
 epochPluginOnStartup :: Trace IO Text -> ReaderT SqlBackend (NoLoggingT IO) ()
-epochPluginOnStartup trce =
+epochPluginOnStartup trce = do
+    liftIO . logInfo trce $ "epochPluginOnStartup: Checking"
     maybe (pure ()) loop =<< queryLatestBlockEpochNo
   where
     loop :: MonadIO m => Word64 -> ReaderT SqlBackend m ()
@@ -60,8 +61,10 @@ epochPluginInsertBlock trce rawBlk tipBlkNo =
         -- As long as the current epoch is > 0 we update the epcoch table on a boundary block.
         if newEpoch > 0
           then do
-            liftIO . logInfo trce $ "epochPluginInsertBlock: Updating epoch table for epoch " <> textShow (newEpoch - 1)
-            updateEpochNum (newEpoch - 1) -- Update the last epoch.
+            liftIO . logInfo trce $ "epochPluginInsertBlock: about to update table updated for epoch " <> textShow (newEpoch - 1)
+            res <- updateEpochNum (newEpoch - 1) -- Update the last epoch.
+            liftIO . logInfo trce $ "epochPluginInsertBlock: Epoch table updated for epoch " <> textShow (newEpoch - 1)
+            pure res
           else pure $ Right ()
       Ledger.ABOBBlock blk -> do
         if blockNumber blk > unBlockNo tipBlkNo - 10
@@ -74,10 +77,11 @@ epochPluginInsertBlock trce rawBlk tipBlkNo =
               Right meta -> do
                 let slotsPerEpoch = 10 * DB.metaProtocolConst meta
                 updateEpochNum (slotNumber blk `div` slotsPerEpoch)
-          else
+          else do
+            liftIO . logError trce $ "epochPluginInsertBlock: Ledger.ABOBBlock " <> textShow (blockNumber blk)
             pure $ Right ()
   where
-    -- logErr :: MonadIO m => Either ExplorerNodeError () -> m (Either ExplorerNodeError ())
+    logErr :: MonadIO m => Either ExplorerNodeError () -> ReaderT SqlBackend m (Either ExplorerNodeError ())
     logErr res = do
       case res of
         Left err -> liftIO . logError trce $ "epochPluginInsertBlock: " <> renderExplorerNodeError err
@@ -90,14 +94,23 @@ type ValMay a = Value (Maybe a)
 
 updateEpochNum :: MonadIO m => Word64 -> ReaderT SqlBackend m (Either ExplorerNodeError ())
 updateEpochNum epochNum = do
-    maybe (pure $ Right ()) update =<< queryEpochId epochNum
+    maybe insertEpoch updateEpoch =<< queryEpochId epochNum
   where
-    update :: MonadIO m => EpochId -> ReaderT SqlBackend m (Either ExplorerNodeError ())
-    update epochId = do
+    updateEpoch :: MonadIO m => EpochId -> ReaderT SqlBackend m (Either ExplorerNodeError ())
+    updateEpoch epochId = do
       eEpoch <- queryEpochEntry epochNum
       case eEpoch of
         Left err -> pure $ Left err
         Right epoch -> Right <$> repsert epochId epoch
+
+    insertEpoch :: MonadIO m => ReaderT SqlBackend m (Either ExplorerNodeError ())
+    insertEpoch = do
+      eEpoch <- queryEpochEntry epochNum
+      case eEpoch of
+        Left err -> pure $ Left err
+        Right epoch -> do
+          void $ DB.insertEpoch epoch
+          pure $ Right ()
 
 queryEpochId :: MonadIO m => Word64 -> ReaderT SqlBackend m (Maybe EpochId)
 queryEpochId epochNum = do

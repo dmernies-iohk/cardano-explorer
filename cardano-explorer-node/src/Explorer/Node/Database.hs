@@ -6,6 +6,7 @@ module Explorer.Node.Database
   , DbActionQueue (..)
   , lengthDbActionQueue
   , newDbActionQueue
+  , runDbStartup
   , runDbThread
   , writeDbActionQueue
   ) where
@@ -59,6 +60,11 @@ newDbActionQueue = DbActionQueue <$> TBQ.newTBQueueIO 20000
 writeDbActionQueue :: DbActionQueue -> DbAction -> STM ()
 writeDbActionQueue (DbActionQueue q) = TBQ.writeTBQueue q
 
+
+runDbStartup :: Trace IO Text -> ExplorerNodePlugin -> IO ()
+runDbStartup trce plugin =
+  DB.runDbNoLogging $
+    mapM_ (\action -> action trce) $ plugOnStartup plugin
 
 runDbThread :: Trace IO Text -> ExplorerNodePlugin -> Metrics -> DbActionQueue -> IO ()
 runDbThread trce plugin metrics queue = do
