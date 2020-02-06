@@ -63,8 +63,7 @@ writeDbActionQueue (DbActionQueue q) = TBQ.writeTBQueue q
 
 runDbStartup :: Trace IO Text -> ExplorerNodePlugin -> IO ()
 runDbStartup trce plugin =
-  DB.runDbNoLogging $
-    mapM_ (\action -> action trce) $ plugOnStartup plugin
+  mapM_ (\action -> action trce) $ plugOnStartup plugin
 
 runDbThread :: Trace IO Text -> ExplorerNodePlugin -> Metrics -> DbActionQueue -> IO ()
 runDbThread trce plugin metrics queue = do
