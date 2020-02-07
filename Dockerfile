@@ -53,5 +53,7 @@ RUN cat /etc/sudoers | grep -v secure_path > /etc/sudoers.tmp && mv /etc/sudoers
 EXPOSE 8100
 # monitoring interface
 EXPOSE 80
+# database
+EXPOSE 5432
 
 ENTRYPOINT [ "/nix/var/nix/profiles/per-user/cardano/profile/bin/runit" ]
